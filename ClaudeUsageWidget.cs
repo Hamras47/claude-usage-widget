@@ -474,6 +474,7 @@ namespace ClaudeUsageWidget
         [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
         [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
         [DllImport("user32.dll")] public static extern IntPtr SetWindowLongPtr(IntPtr h, int i, IntPtr v);
+        [DllImport("user32.dll")] public static extern int GetSystemMetrics(int i);
         [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
     }
 
@@ -1004,7 +1005,52 @@ namespace ClaudeUsageWidget
             Application.Current.Shutdown();
         }
 
+        // Autostart uses a shortcut in the user's Startup folder (same as the other desktop widgets);
+        // the Run registry entry proved unreliable.
+        static string StartupShortcut
+        {
+            get { return System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Startup), "Claude Usage Widget.lnk"); }
+        }
+
         public static bool IsStartupEnabled()
+        {
+            return File.Exists(StartupShortcut);
+        }
+
+        static void RemoveLegacyRunEntry()
+        {
+            try
+            {
+                using (var k = Registry.CurrentUser.OpenSubKey(RunKey, true))
+                    if (k != null) k.DeleteValue(RunName, false);
+            }
+            catch { }
+        }
+
+        public static void SetStartup(bool on)
+        {
+            RemoveLegacyRunEntry();
+            try
+            {
+                if (!on) { if (File.Exists(StartupShortcut)) File.Delete(StartupShortcut); return; }
+                var exe = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                var shellType = Type.GetTypeFromProgID("WScript.Shell");
+                var shell = Activator.CreateInstance(shellType);
+                var lnk = shellType.InvokeMember("CreateShortcut", System.Reflection.BindingFlags.InvokeMethod, null, shell, new object[] { StartupShortcut });
+                var t = lnk.GetType();
+                t.InvokeMember("TargetPath", System.Reflection.BindingFlags.SetProperty, null, lnk, new object[] { exe });
+                t.InvokeMember("Arguments", System.Reflection.BindingFlags.SetProperty, null, lnk, new object[] { "--startup" });
+                t.InvokeMember("WorkingDirectory", System.Reflection.BindingFlags.SetProperty, null, lnk, new object[] { System.IO.Path.GetDirectoryName(exe) });
+                t.InvokeMember("Description", System.Reflection.BindingFlags.SetProperty, null, lnk, new object[] { "Claude usage desktop widget" });
+                t.InvokeMember("Save", System.Reflection.BindingFlags.InvokeMethod, null, lnk, null);
+                Marshal.FinalReleaseComObject(lnk);
+                Marshal.FinalReleaseComObject(shell);
+            }
+            catch (Exception ex) { Program.Log("startup shortcut failed: " + ex.Message); }
+        }
+
+        // true if an older build registered startup via the Run key
+        public static bool HasLegacyRunEntry()
         {
             try
             {
@@ -1012,19 +1058,6 @@ namespace ClaudeUsageWidget
                     return k != null && k.GetValue(RunName) != null;
             }
             catch { return false; }
-        }
-
-        public static void SetStartup(bool on)
-        {
-            try
-            {
-                using (var k = Registry.CurrentUser.CreateSubKey(RunKey))
-                {
-                    if (on) k.SetValue(RunName, "\"" + System.Reflection.Assembly.GetExecutingAssembly().Location + "\" --startup");
-                    else k.DeleteValue(RunName, false);
-                }
-            }
-            catch { }
         }
 
         // ---------------------------------------------------------------- data refresh & rendering
@@ -1209,19 +1242,26 @@ namespace ClaudeUsageWidget
                     settings.FirstRunDone = true;
                     settings.Save();
                 }
-                else if (WidgetWindow.IsStartupEnabled())
+                else if (WidgetWindow.IsStartupEnabled() || WidgetWindow.HasLegacyRunEntry())
                 {
-                    WidgetWindow.SetStartup(true); // rewrite older entries in the current "--startup" form
+                    WidgetWindow.SetStartup(true); // (re)create the Startup-folder shortcut, drop the old Run entry
                 }
 
+                bool sessionEnding = false;
                 var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
                 app.DispatcherUnhandledException += (s, e) => { Log("UI error: " + e.Exception); e.Handled = true; };
+                app.SessionEnding += (s, e) => { sessionEnding = true; Log("Windows is shutting down / signing out"); };
                 var w = new WidgetWindow(settings);
                 // If Windows/Explorer destroys our window (e.g. the desktop it was attached to went away),
-                // start a fresh copy instead of silently vanishing.
+                // start a fresh copy instead of silently vanishing - but never while Windows is shutting down.
                 w.Closed += delegate
                 {
                     if (w.ExitRequested) return;
+                    if (sessionEnding || Native.GetSystemMetrics(0x2000 /*SM_SHUTTINGDOWN*/) != 0)
+                    {
+                        app.Shutdown();
+                        return;
+                    }
                     Log("window was closed externally; relaunching");
                     Relaunch();
                     app.Shutdown();
