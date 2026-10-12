@@ -855,6 +855,10 @@ namespace ClaudeUsageWidget
         void ApplyTint()
         {
             chrome.Background = new SolidColorBrush(Color.FromArgb((byte)settings.TintAlpha, 10, 13, 18));
+            // "None": no card and no rim, just the text on the wallpaper (the window's alpha-1 fill still catches the mouse)
+            chrome.BorderBrush = new SolidColorBrush(Color.FromArgb((byte)(settings.TintAlpha == 0 ? 0 : 0x38), 0xFF, 0xFF, 0xFF));
+            // with no card the text sits on the wallpaper: a little dimmer so it blends in
+            chrome.Opacity = settings.TintAlpha == 0 ? 0.8 : 1.0;
         }
 
         void UpdateLockVisual()
@@ -890,7 +894,7 @@ namespace ClaudeUsageWidget
             menu.Items.Add(signInItem);
 
             var tint = new MenuItem { Header = "Background tint" };
-            foreach (var opt in new[] { new KeyValuePair<string, int>("Clear", 0x30), new KeyValuePair<string, int>("Light", 0x70), new KeyValuePair<string, int>("Medium", 0x9E), new KeyValuePair<string, int>("Dark", 0xD0) })
+            foreach (var opt in new[] { new KeyValuePair<string, int>("None (part of the wallpaper)", 0), new KeyValuePair<string, int>("Clear", 0x30), new KeyValuePair<string, int>("Light", 0x70), new KeyValuePair<string, int>("Medium", 0x9E), new KeyValuePair<string, int>("Dark", 0xD0) })
             {
                 var alpha = opt.Value;
                 var mi = new MenuItem { Header = opt.Key, IsCheckable = true, IsChecked = settings.TintAlpha == alpha, Tag = alpha };
