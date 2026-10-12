@@ -4,6 +4,10 @@ A small translucent Windows desktop widget that shows your Claude plan limits an
 
 <img src="docs/screenshot.png" alt="Claude Usage Widget on the desktop" width="420">
 
+With **Background tint → None** there is no card at all, just the numbers on your wallpaper:
+
+<img src="docs/screenshot-no-background.png" alt="Claude Usage Widget with no background" width="420">
+
 ## Features
 
 - **5-hour session** and **weekly** limits: percent left, percent used and reset time
@@ -31,7 +35,7 @@ Without signing in, it falls back to the snapshot file the Claude desktop app wr
 
 ## Right-click menu
 
-Lock position & size · Refresh now · Background tint · Reset size · Start with Windows · Exit.
+Lock position & size · Refresh now · Background tint (None, Clear, Light, Medium, Dark) · Reset size · Start with Windows · Exit.
 A tray icon offers the same basics.
 
 Logs are written to `%LOCALAPPDATA%\ClaudeUsageWidget\widget.log`.
